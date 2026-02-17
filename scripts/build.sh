@@ -305,13 +305,24 @@ if [[ -n "${PDFIUM_HEADER_SRC}" ]]; then
     cp -r "${PDFIUM_HEADER_SRC}/"* "${DIST}/include/"
 fi
 
+# ── Copy Rust FFI crate ──────────────────────────────────────────────────
+
+if [[ -d "${SRC}/rust/pdfium-wrapper-sys" ]]; then
+    echo "Copying Rust FFI crate into bundle …"
+    mkdir -p "${DIST}/rust/pdfium-wrapper-sys/src"
+    cp "${SRC}/rust/pdfium-wrapper-sys/Cargo.toml" "${DIST}/rust/pdfium-wrapper-sys/"
+    cp "${SRC}/rust/pdfium-wrapper-sys/build.rs"   "${DIST}/rust/pdfium-wrapper-sys/"
+    cp "${SRC}/rust/pdfium-wrapper-sys/src/lib.rs"  "${DIST}/rust/pdfium-wrapper-sys/src/"
+fi
+
 # ── Package bundle ────────────────────────────────────────────────────────
 #
 # Create a single .tar.gz that contains everything a consumer needs:
 #   pdf-engine/
-#   ├── include/          (pdfium_wrapper.h + PDFium headers)
-#   ├── android/<abi>/lib/  (libpdfium_wrapper.a + libpdfium.so)
-#   └── ios/<arch>/lib/     (libpdfium_wrapper.a + libpdfium.dylib)
+#   ├── include/                        (pdfium_wrapper.h + PDFium headers)
+#   ├── android/<abi>/lib/              (libpdfium_wrapper.a + libpdfium.so)
+#   ├── ios/<arch>/lib/                 (libpdfium_wrapper.a + libpdfium.dylib)
+#   └── rust/pdfium-wrapper-sys/        (Rust FFI crate, ready to use)
 
 BUNDLE="${DIST}/pdf-engine.tar.gz"
 echo ""
@@ -345,6 +356,7 @@ if [[ "${TARGET}" == "all" || "${TARGET}" == "ios" ]]; then
     echo "  ios/x86_64/lib/     libpdfium_wrapper.a + libpdfium.dylib"
 fi
 echo "  include/            pdfium_wrapper.h + PDFium headers"
+echo "  rust/               pdfium-wrapper-sys Rust FFI crate"
 echo ""
 echo "Ready-to-use bundle:"
 echo "  dist/pdf-engine.tar.gz"

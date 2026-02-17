@@ -25,13 +25,15 @@ pdf-engine/
 │   ├── CMakeLists.txt          # Builds libpdfium_wrapper.a
 │   ├── pdfium_wrapper.h        # Public C API header
 │   └── pdfium_wrapper.c        # Implementation
+├── rust/
+│   └── pdfium-wrapper-sys/     # Rust FFI crate (included in bundle)
+│       ├── Cargo.toml
+│       ├── build.rs            # Auto-detects target arch → lib dir
+│       └── src/lib.rs          # extern "C" bindings + PdfiumBitmap
 ├── scripts/
 │   ├── build.sh                # Single build script (iOS + Android)
 │   └── download_pdfium.sh      # Fetches pre-built PDFium for all targets
-├── dist/                       # (generated) final artifacts
-│   ├── ios/<arch>/lib/
-│   ├── android/<arch>/lib/
-│   └── include/pdfium_wrapper.h
+├── dist/                       # (generated) final artifacts + bundle
 ├── third_party/                # (generated) downloaded PDFium binaries
 └── build/                      # (generated) CMake build directories
 ```
@@ -98,18 +100,21 @@ ANDROID_API=24 PDFIUM_VERSION=6721 ./scripts/build.sh
 
 ### Output
 
+The build produces `dist/pdf-engine.tar.gz` — a single bundle with everything:
+
 ```
 dist/
 ├── android/
-│   ├── arm64-v8a/lib/   (libpdfium_wrapper.a + libpdfium.so)
+│   ├── arm64-v8a/lib/             libpdfium_wrapper.a + libpdfium.so
 │   ├── armeabi-v7a/lib/
 │   ├── x86_64/lib/
 │   └── x86/lib/
 ├── ios/
-│   ├── arm64/lib/       (libpdfium_wrapper.a + libpdfium.dylib)
+│   ├── arm64/lib/                 libpdfium_wrapper.a + libpdfium.dylib
 │   └── x86_64/lib/
-└── include/
-    └── pdfium_wrapper.h
+├── include/                       pdfium_wrapper.h + PDFium headers
+├── rust/pdfium-wrapper-sys/       Rust FFI crate (drop-in)
+└── pdf-engine.tar.gz              ← this archive contains all of the above
 ```
 
 ## Native Builds (no Docker)
@@ -147,33 +152,74 @@ The iOS build compiles with `clang` using the correct Apple target triple. Since
 PDFIUM_VERSION=6721 ./scripts/download_pdfium.sh
 ```
 
-## Linking from Rust
+## Using from Rust
 
-In your Rust project's `build.rs`:
+The bundle includes a ready-to-use Rust FFI crate at `rust/pdfium-wrapper-sys/`.
+
+### 1. Extract the bundle and add the crate as a dependency
+
+```bash
+tar xzf pdf-engine.tar.gz -C vendor/pdf-engine
+```
+
+In your `Cargo.toml`:
+
+```toml
+[dependencies]
+pdfium-wrapper-sys = { path = "vendor/pdf-engine/rust/pdfium-wrapper-sys" }
+```
+
+### 2. Point it at the libraries
+
+The `build.rs` in the crate auto-detects the right architecture from Cargo's target triple. Just set `PDFIUM_ROOT` to the extracted bundle:
+
+```bash
+# Builds for Android arm64 — the crate picks android/arm64-v8a/lib automatically
+PDFIUM_ROOT=vendor/pdf-engine cargo build --target aarch64-linux-android
+```
+
+Or override with a specific directory:
+
+```bash
+PDFIUM_LIB_DIR=vendor/pdf-engine/ios/arm64/lib cargo build --target aarch64-apple-ios
+```
+
+### 3. Call the API
 
 ```rust
-fn main() {
-    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
-    let target_os   = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+use pdfium_wrapper_sys::*;
+use std::ffi::CString;
 
-    let pdf_engine = std::env::var("PDF_ENGINE_DIR")
-        .unwrap_or_else(|_| "../pdf-engine/dist".to_string());
+unsafe {
+    pdfium_init();
 
-    let lib_dir = match (target_os.as_str(), target_arch.as_str()) {
-        ("ios", "aarch64")     => format!("{pdf_engine}/ios/arm64/lib"),
-        ("ios", "x86_64")     => format!("{pdf_engine}/ios/x86_64/lib"),
-        ("android", "aarch64") => format!("{pdf_engine}/android/arm64-v8a/lib"),
-        ("android", "arm")     => format!("{pdf_engine}/android/armeabi-v7a/lib"),
-        ("android", "x86_64")  => format!("{pdf_engine}/android/x86_64/lib"),
-        ("android", "x86")     => format!("{pdf_engine}/android/x86/lib"),
-        _ => panic!("Unsupported target: {target_os}-{target_arch}"),
-    };
+    let path = CString::new("/path/to/document.pdf").unwrap();
+    let doc = pdfium_load_document(path.as_ptr());
+    if !doc.is_null() {
+        let bmp = pdfium_render_page(doc, 0, 1024);
+        if !bmp.is_null() {
+            let bitmap = &*bmp;
+            // bitmap.data  → *mut u8 (RGBA pixels)
+            // bitmap.width, bitmap.height, bitmap.stride
+            pdfium_free_bitmap(bmp as *mut _);
+        }
+        pdfium_close_document(doc);
+    }
 
-    println!("cargo:rustc-link-search=native={lib_dir}");
-    println!("cargo:rustc-link-lib=static=pdfium_wrapper");
-    println!("cargo:rustc-link-lib=dylib=pdfium");
+    pdfium_destroy();
 }
 ```
+
+### Supported Cargo targets
+
+| Cargo target | Bundle directory |
+|---|---|
+| `aarch64-linux-android` | `android/arm64-v8a` |
+| `armv7-linux-androideabi` | `android/armeabi-v7a` |
+| `x86_64-linux-android` | `android/x86_64` |
+| `i686-linux-android` | `android/x86` |
+| `aarch64-apple-ios` | `ios/arm64` |
+| `x86_64-apple-ios` | `ios/x86_64` |
 
 ## Clean
 
