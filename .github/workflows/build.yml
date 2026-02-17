@@ -40,18 +40,96 @@ jobs:
 
       - name: Verify artifacts
         run: |
+          set -euo pipefail
+          ERRORS=0
+
+          check() {
+            local label="$1" file="$2"
+            if [[ ! -f "${file}" ]]; then
+              echo "FAIL: missing ${label} (${file})"
+              ERRORS=$((ERRORS + 1))
+              return 1
+            fi
+            local size
+            size=$(stat -c%s "${file}" 2>/dev/null || stat -f%z "${file}")
+            if [[ "${size}" -lt 1024 ]]; then
+              echo "FAIL: ${label} is suspiciously small (${size} bytes)"
+              ERRORS=$((ERRORS + 1))
+              return 1
+            fi
+            echo "  OK: ${label} ($(numfmt --to=iec ${size}))"
+          }
+
+          echo "── File presence & size ──"
           for abi in arm64-v8a armeabi-v7a x86_64 x86; do
-            test -f "dist/android/${abi}/lib/libpdfium_wrapper.a" || { echo "Missing: android/${abi}/libpdfium_wrapper.a"; exit 1; }
-            test -f "dist/android/${abi}/lib/libpdfium.so"        || { echo "Missing: android/${abi}/libpdfium.so"; exit 1; }
+            check "android/${abi}/libpdfium_wrapper.a" "dist/android/${abi}/lib/libpdfium_wrapper.a"
+            check "android/${abi}/libpdfium.so"        "dist/android/${abi}/lib/libpdfium.so"
           done
           for arch in arm64 x86_64; do
-            test -f "dist/ios/${arch}/lib/libpdfium_wrapper.a"  || { echo "Missing: ios/${arch}/libpdfium_wrapper.a"; exit 1; }
-            test -f "dist/ios/${arch}/lib/libpdfium.dylib"      || { echo "Missing: ios/${arch}/libpdfium.dylib"; exit 1; }
+            check "ios/${arch}/libpdfium_wrapper.a"  "dist/ios/${arch}/lib/libpdfium_wrapper.a"
+            check "ios/${arch}/libpdfium.dylib"      "dist/ios/${arch}/lib/libpdfium.dylib"
           done
-          test -f dist/include/pdfium_wrapper.h || { echo "Missing: pdfium_wrapper.h"; exit 1; }
-          test -f dist/include/fpdfview.h       || { echo "Missing: fpdfview.h (PDFium headers)"; exit 1; }
-          test -f dist/pdf-engine.tar.gz        || { echo "Missing: pdf-engine.tar.gz bundle"; exit 1; }
-          echo "All artifacts verified."
+          check "pdfium_wrapper.h" "dist/include/pdfium_wrapper.h"
+          check "fpdfview.h"       "dist/include/fpdfview.h"
+          check "pdf-engine.tar.gz" "dist/pdf-engine.tar.gz"
+
+          echo ""
+          echo "── File formats (should be ELF for Android, Mach-O for iOS) ──"
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+            FMT=$(file "dist/android/${abi}/lib/libpdfium.so")
+            echo "  android/${abi}/libpdfium.so: ${FMT}"
+            echo "${FMT}" | grep -qi "ELF" || { echo "FAIL: expected ELF"; ERRORS=$((ERRORS + 1)); }
+          done
+          for arch in arm64 x86_64; do
+            FMT=$(file "dist/ios/${arch}/lib/libpdfium.dylib")
+            echo "  ios/${arch}/libpdfium.dylib: ${FMT}"
+            echo "${FMT}" | grep -qi "Mach-O" || { echo "FAIL: expected Mach-O"; ERRORS=$((ERRORS + 1)); }
+          done
+
+          echo ""
+          echo "── Architecture check ──"
+          file "dist/android/arm64-v8a/lib/libpdfium.so"  | grep -qi "aarch64\|arm64"  || { echo "FAIL: arm64-v8a not aarch64"; ERRORS=$((ERRORS + 1)); }
+          file "dist/android/armeabi-v7a/lib/libpdfium.so" | grep -qi "arm\|32"          || { echo "FAIL: armeabi-v7a not ARM"; ERRORS=$((ERRORS + 1)); }
+          file "dist/android/x86_64/lib/libpdfium.so"     | grep -qi "x86.64\|x86-64"  || { echo "FAIL: x86_64 not x86-64"; ERRORS=$((ERRORS + 1)); }
+          file "dist/android/x86/lib/libpdfium.so"        | grep -qi "Intel\|386\|x86"  || { echo "FAIL: x86 not x86"; ERRORS=$((ERRORS + 1)); }
+          echo "  Android architectures look correct."
+
+          echo ""
+          echo "── Wrapper symbols (should export pdfium_init, pdfium_render_page, etc.) ──"
+          EXPECTED_SYMBOLS="pdfium_init pdfium_destroy pdfium_load_document pdfium_close_document pdfium_render_page pdfium_free_bitmap"
+          SAMPLE_LIB="dist/android/arm64-v8a/lib/libpdfium_wrapper.a"
+          if command -v llvm-nm &>/dev/null; then
+            NM_CMD="llvm-nm"
+          elif command -v nm &>/dev/null; then
+            NM_CMD="nm"
+          else
+            NM_CMD=""
+            echo "  SKIP: no nm/llvm-nm available"
+          fi
+          if [[ -n "${NM_CMD}" ]]; then
+            SYMS=$(${NM_CMD} "${SAMPLE_LIB}" 2>/dev/null || true)
+            for sym in ${EXPECTED_SYMBOLS}; do
+              if echo "${SYMS}" | grep -q "${sym}"; then
+                echo "  OK: ${sym}"
+              else
+                echo "  FAIL: symbol '${sym}' not found in wrapper"
+                ERRORS=$((ERRORS + 1))
+              fi
+            done
+          fi
+
+          echo ""
+          echo "── Bundle contents ──"
+          tar tzf dist/pdf-engine.tar.gz | head -30
+          BUNDLE_COUNT=$(tar tzf dist/pdf-engine.tar.gz | wc -l)
+          echo "  ... (${BUNDLE_COUNT} entries total)"
+
+          echo ""
+          if [[ ${ERRORS} -gt 0 ]]; then
+            echo "VERIFICATION FAILED: ${ERRORS} error(s)"
+            exit 1
+          fi
+          echo "All artifacts verified successfully."
 
       - name: Upload bundle
         uses: actions/upload-artifact@v4
