@@ -154,8 +154,9 @@ jobs:
 
           echo ""
           echo "── Bundle contents ──"
-          tar tzf dist/pdf-engine.tar.gz | head -30
-          BUNDLE_COUNT=$(tar tzf dist/pdf-engine.tar.gz | wc -l)
+          BUNDLE_LIST=$(tar tzf dist/pdf-engine.tar.gz)
+          BUNDLE_COUNT=$(echo "${BUNDLE_LIST}" | wc -l)
+          echo "${BUNDLE_LIST}" | head -30
           echo "  ... (${BUNDLE_COUNT} entries total)"
 
           echo ""
