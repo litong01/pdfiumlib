@@ -2,10 +2,12 @@
 #
 # build.sh — Build pdfium_wrapper for iOS and Android.
 #
-# Everything runs inside a single Docker container by default so nothing
-# (NDK, CMake, clang …) needs to be installed on the host.  The only host
-# requirement is Docker — plus Xcode on macOS for the iOS SDK that gets
-# volume-mounted into the container.
+# Everything runs inside a single Docker container by default.  The ONLY host
+# requirement is Docker.  No Xcode, no NDK, no CMake on the host.
+#
+# For iOS cross-compilation, the container uses clang with the correct
+# -target triple.  The wrapper only uses standard C functions (malloc, memcpy,
+# ceil …) and PDFium headers — no iOS SDK is needed at compile time.
 #
 # Usage:
 #   ./scripts/build.sh                      # build both platforms (Docker)
@@ -43,36 +45,7 @@ TARGET="${1:-all}"
 if [[ "${_IN_DOCKER:-}" != "1" ]] && [[ "${USE_DOCKER:-1}" != "0" ]]; then
     IMAGE="pdf-engine-builder"
 
-    # ── Resolve iOS SDK mounts (only needed when building iOS) ────────────
-    DOCKER_SDK_MOUNTS=()
-    if [[ "${TARGET}" == "all" || "${TARGET}" == "ios" ]]; then
-        if ! command -v xcrun &>/dev/null; then
-            echo "ERROR: xcrun not found.  Install Xcode Command Line Tools."
-            echo "       The iOS SDK is required even for Docker builds."
-            exit 1
-        fi
-
-        IPHONEOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
-        IPHONESIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/null || true)"
-
-        if [[ -z "${IPHONEOS_SDK}" ]] || [[ ! -d "${IPHONEOS_SDK}" ]]; then
-            echo "ERROR: Could not locate iPhoneOS SDK via xcrun."
-            echo "       Make sure Xcode is installed and xcode-select points to it."
-            exit 1
-        fi
-        if [[ -z "${IPHONESIM_SDK}" ]] || [[ ! -d "${IPHONESIM_SDK}" ]]; then
-            echo "ERROR: Could not locate iPhoneSimulator SDK via xcrun."
-            exit 1
-        fi
-
-        echo "  iOS SDK (device):    ${IPHONEOS_SDK}"
-        echo "  iOS SDK (simulator): ${IPHONESIM_SDK}"
-        DOCKER_SDK_MOUNTS=(-v "${IPHONEOS_SDK}:/ios-sdk-device:ro"
-                           -v "${IPHONESIM_SDK}:/ios-sdk-simulator:ro")
-    fi
-
     # ── Build the image ───────────────────────────────────────────────────
-    echo ""
     echo "══════════════════════════════════════════════"
     echo "  Building Docker image: ${IMAGE}"
     echo "══════════════════════════════════════════════"
@@ -89,7 +62,6 @@ if [[ "${_IN_DOCKER:-}" != "1" ]] && [[ "${USE_DOCKER:-1}" != "0" ]]; then
         -e PDFIUM_VERSION="${PDFIUM_VERSION:-}" \
         --user "$(id -u):$(id -g)" \
         -v "${PROJECT_ROOT}:/src" \
-        "${DOCKER_SDK_MOUNTS[@]+"${DOCKER_SDK_MOUNTS[@]}"}" \
         "${IMAGE}" \
         bash /src/scripts/build.sh "${TARGET}"
 
@@ -119,7 +91,7 @@ fi
 bash "${SRC}/scripts/download_pdfium.sh"
 
 # ───────────────────────────────────────────────────────────────────────────
-#  Android
+#  Android  (CMake + NDK toolchain)
 # ───────────────────────────────────────────────────────────────────────────
 
 build_android() {
@@ -193,11 +165,21 @@ build_android() {
 }
 
 # ───────────────────────────────────────────────────────────────────────────
-#  iOS  (two code paths: Docker uses direct clang; native uses CMake+Xcode)
+#  iOS  (clang cross-compilation — works on any Linux, no Xcode needed)
+#
+#  We compile with clang -target arm64-apple-ios13.0 using the container's
+#  Linux system headers.  This works because:
+#    - The C standard functions we use (malloc, free, memcpy, ceil …) have
+#      identical signatures on every platform.
+#    - The target triple controls the ABI, calling convention, and output
+#      object format (Mach-O).  Headers just provide declarations.
+#    - We only compile (-c) to .o and archive to .a — no linking occurs.
+#
+#  On native macOS (USE_DOCKER=0) we use CMake + Xcode SDK instead.
 # ───────────────────────────────────────────────────────────────────────────
 
-build_ios_arch_docker() {
-    local ARCH="$1" PDFIUM_DIR="$2" SDK_PATH="$3" TARGET="$4" INSTALL_DIR="$5"
+build_ios_arch_crosscompile() {
+    local ARCH="$1" PDFIUM_DIR="$2" CLANG_TARGET="$3" INSTALL_DIR="$4"
 
     echo ""
     echo "============================================"
@@ -214,8 +196,8 @@ build_ios_arch_docker() {
     mkdir -p "${OBJ_DIR}"
 
     clang \
-        -target "${TARGET}" \
-        -isysroot "${SDK_PATH}" \
+        -target "${CLANG_TARGET}" \
+        --sysroot=/ \
         -I"${SRC}/wrapper" \
         -I"${PDFIUM_DIR}/include" \
         -O2 -DNDEBUG -fPIC \
@@ -227,12 +209,12 @@ build_ios_arch_docker() {
     echo "  ✓ ${ARCH}"
 }
 
-build_ios_arch_native() {
+build_ios_arch_xcode() {
     local ARCH="$1" PDFIUM_DIR="$2" SDK_NAME="$3" OSX_ARCH="$4" INSTALL_DIR="$5"
 
     echo ""
     echo "============================================"
-    echo "  iOS — ${ARCH}  (native CMake)"
+    echo "  iOS — ${ARCH}  (native CMake + Xcode)"
     echo "============================================"
 
     local SDK_PATH
@@ -259,12 +241,14 @@ build_ios_arch_native() {
 }
 
 build_ios() {
-    if [[ "${_IN_DOCKER:-}" == "1" ]]; then
-        build_ios_arch_docker "arm64"  "${THIRD_PARTY}/ios-arm64" "/ios-sdk-device"    "arm64-apple-ios13.0"              "${DIST}/ios/arm64"
-        build_ios_arch_docker "x86_64" "${THIRD_PARTY}/ios-x64"   "/ios-sdk-simulator" "x86_64-apple-ios13.0-simulator"   "${DIST}/ios/x86_64"
+    # On macOS with Xcode: use CMake + the real iOS SDK.
+    # Everywhere else (Docker, Linux CI): use clang cross-compilation.
+    if [[ "$(uname)" == "Darwin" ]] && command -v xcrun &>/dev/null; then
+        build_ios_arch_xcode "arm64"  "${THIRD_PARTY}/ios-arm64" "iphoneos"        "arm64"  "${DIST}/ios/arm64"
+        build_ios_arch_xcode "x86_64" "${THIRD_PARTY}/ios-x64"   "iphonesimulator" "x86_64" "${DIST}/ios/x86_64"
     else
-        build_ios_arch_native "arm64"  "${THIRD_PARTY}/ios-arm64" "iphoneos"        "arm64"  "${DIST}/ios/arm64"
-        build_ios_arch_native "x86_64" "${THIRD_PARTY}/ios-x64"   "iphonesimulator" "x86_64" "${DIST}/ios/x86_64"
+        build_ios_arch_crosscompile "arm64"  "${THIRD_PARTY}/ios-arm64" "arm64-apple-ios13.0"            "${DIST}/ios/arm64"
+        build_ios_arch_crosscompile "x86_64" "${THIRD_PARTY}/ios-x64"   "x86_64-apple-ios13.0-simulator" "${DIST}/ios/x86_64"
     fi
 }
 

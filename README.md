@@ -2,7 +2,16 @@
 
 A standalone build system that produces pre-compiled **PDFium** static libraries and a minimal **C wrapper** for iOS and Android. The output artifacts are designed to be linked by a Rust (or any other) application — no Rust code lives here.
 
-All builds run inside a **single Docker container** by default so your host system stays clean.
+All builds run inside a **single Docker container** by default. The only host requirement is Docker — no Xcode, no NDK, no CMake.
+
+## CI
+
+A GitHub Actions workflow builds both platforms on every push to `main` and on pull requests. Everything runs on a single `ubuntu-latest` runner — no macOS runner needed. When you push a version tag (`v*`), a release is created automatically with a `pdf-engine-<tag>.tar.gz` archive.
+
+| Job | Runner | Method |
+|---|---|---|
+| `build` | `ubuntu-latest` | clang cross-compile (iOS) + CMake/NDK (Android) |
+| `release` | `ubuntu-latest` | Packages and uploads artifacts when a `v*` tag is pushed |
 
 ## Repository Layout
 
@@ -11,6 +20,7 @@ pdf-engine/
 ├── Dockerfile                  # Single build container (Ubuntu + NDK + clang + CMake)
 ├── CMakeLists.txt              # Top-level CMake (imports PDFium, adds wrapper/)
 ├── .dockerignore
+├── .github/workflows/build.yml # CI: build + release
 ├── wrapper/
 │   ├── CMakeLists.txt          # Builds libpdfium_wrapper.a
 │   ├── pdfium_wrapper.h        # Public C API header
@@ -47,10 +57,9 @@ void  pdfium_free_bitmap(void* bitmap);
 
 | Requirement | Notes |
 |---|---|
-| **Docker** | Required for containerized builds (the default) |
-| **Xcode** | Required on macOS for the iOS SDK, which is volume-mounted into the container |
+| **Docker** | The only requirement for the default build |
 
-Everything else (CMake, Android NDK r27c, LLVM/clang) is provided by the Docker image.
+Everything (CMake, Android NDK r27c, LLVM/clang) is provided by the Docker image. No Xcode, no macOS, no host toolchains needed.
 
 ## Quick Start
 
@@ -62,15 +71,14 @@ Everything else (CMake, Android NDK r27c, LLVM/clang) is provided by the Docker 
 
 This single command will:
 1. Build the `pdf-engine-builder` Docker image (once, then cached)
-2. Locate the iOS SDKs on the macOS host and mount them read-only
-3. Download pre-built PDFium inside the container
-4. Cross-compile the wrapper for all 6 architectures
-5. Write artifacts to `dist/` on the host
+2. Download pre-built PDFium inside the container
+3. Cross-compile the wrapper for all 6 architectures
+4. Write artifacts to `dist/` on the host
 
 ### Build one platform only
 
 ```bash
-./scripts/build.sh android    # Android only (no Xcode needed)
+./scripts/build.sh android    # Android only
 ./scripts/build.sh ios        # iOS only
 ```
 
@@ -109,15 +117,14 @@ dist/
 If you prefer to build without Docker (e.g. on CI with tools pre-installed), set `USE_DOCKER=0`:
 
 ```bash
-# Both platforms
+# On Linux (clang + NDK required)
 USE_DOCKER=0 ANDROID_NDK_HOME=/path/to/ndk ./scripts/build.sh
 
-# Android only
-USE_DOCKER=0 ANDROID_NDK_HOME=/path/to/ndk ./scripts/build.sh android
-
-# iOS only (requires macOS + Xcode + CMake)
-USE_DOCKER=0 ./scripts/build.sh ios
+# On macOS (Xcode + CMake + NDK required)
+USE_DOCKER=0 ANDROID_NDK_HOME=/path/to/ndk ./scripts/build.sh
 ```
+
+On macOS with Xcode, iOS builds use CMake + the Xcode SDK. On Linux, iOS builds use `clang` cross-compilation.
 
 ## How It Works
 
@@ -126,12 +133,12 @@ A single Docker image (`Dockerfile`) contains both the Android NDK and LLVM/clan
 1. **On the host** — detects it's outside Docker, builds the image, and re-runs itself inside a container with the project directory mounted at `/src`.
 2. **Inside the container** — detects `_IN_DOCKER=1` and performs the actual compilation.
 
-| Platform | Build method inside the container |
+| Platform | Build method |
 |---|---|
 | **Android** | CMake with the NDK toolchain file |
-| **iOS** | Direct `clang -target arm64-apple-ios13.0 -isysroot /ios-sdk-device` cross-compilation |
+| **iOS** | `clang -target arm64-apple-ios13.0 --sysroot=/ -c` cross-compilation |
 
-The iOS build uses direct `clang` invocation rather than CMake's iOS platform module because the latter requires `xcrun`/Xcode inside the container. Since we compile a single C file into a static archive, direct invocation is simpler and fully reliable.
+The iOS build compiles with `clang` using the correct Apple target triple. Since our wrapper only uses standard C functions (`malloc`, `free`, `memcpy`, `ceil`) and PDFium headers, the Linux system headers provide correct declarations — no iOS SDK is needed at compile time. The target triple controls the ABI, calling convention, and Mach-O object format. Only compilation occurs (no linking), so no Apple linker is required either.
 
 ## Download PDFium Only
 
