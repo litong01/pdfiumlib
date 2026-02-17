@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+dist/
+
+# Downloaded PDFium binaries
+third_party/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
