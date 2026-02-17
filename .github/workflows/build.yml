@@ -6,6 +6,22 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Platform to build"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - android
+          - ios
+      create_release:
+        description: "Create a GitHub release with the bundle"
+        required: false
+        default: false
+        type: boolean
 
 env:
   PDFIUM_VERSION: "7690"
@@ -32,13 +48,15 @@ jobs:
           path: third_party/pdfium
           key: pdfium-${{ env.PDFIUM_VERSION }}
 
-      - name: Build Android + iOS
+      - name: Build
         env:
           USE_DOCKER: "0"
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
-        run: ./scripts/build.sh
+        run: ./scripts/build.sh ${{ inputs.target || 'all' }}
 
       - name: Verify artifacts
+        env:
+          BUILD_TARGET: ${{ inputs.target || 'all' }}
         run: |
           set -euo pipefail
           ERRORS=0
@@ -61,43 +79,59 @@ jobs:
           }
 
           echo "── File presence & size ──"
-          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
-            check "android/${abi}/libpdfium_wrapper.a" "dist/android/${abi}/lib/libpdfium_wrapper.a"
-            check "android/${abi}/libpdfium.so"        "dist/android/${abi}/lib/libpdfium.so"
-          done
-          for arch in arm64 x86_64; do
-            check "ios/${arch}/libpdfium_wrapper.a"  "dist/ios/${arch}/lib/libpdfium_wrapper.a"
-            check "ios/${arch}/libpdfium.dylib"      "dist/ios/${arch}/lib/libpdfium.dylib"
-          done
+          if [[ "${BUILD_TARGET}" == "all" || "${BUILD_TARGET}" == "android" ]]; then
+            for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+              check "android/${abi}/libpdfium_wrapper.a" "dist/android/${abi}/lib/libpdfium_wrapper.a"
+              check "android/${abi}/libpdfium.so"        "dist/android/${abi}/lib/libpdfium.so"
+            done
+          fi
+          if [[ "${BUILD_TARGET}" == "all" || "${BUILD_TARGET}" == "ios" ]]; then
+            for arch in arm64 x86_64; do
+              check "ios/${arch}/libpdfium_wrapper.a"  "dist/ios/${arch}/lib/libpdfium_wrapper.a"
+              check "ios/${arch}/libpdfium.dylib"      "dist/ios/${arch}/lib/libpdfium.dylib"
+            done
+          fi
           check "pdfium_wrapper.h" "dist/include/pdfium_wrapper.h"
           check "fpdfview.h"       "dist/include/fpdfview.h"
           check "pdf-engine.tar.gz" "dist/pdf-engine.tar.gz"
 
           echo ""
-          echo "── File formats (should be ELF for Android, Mach-O for iOS) ──"
-          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
-            FMT=$(file "dist/android/${abi}/lib/libpdfium.so")
-            echo "  android/${abi}/libpdfium.so: ${FMT}"
-            echo "${FMT}" | grep -qi "ELF" || { echo "FAIL: expected ELF"; ERRORS=$((ERRORS + 1)); }
-          done
-          for arch in arm64 x86_64; do
-            FMT=$(file "dist/ios/${arch}/lib/libpdfium.dylib")
-            echo "  ios/${arch}/libpdfium.dylib: ${FMT}"
-            echo "${FMT}" | grep -qi "Mach-O" || { echo "FAIL: expected Mach-O"; ERRORS=$((ERRORS + 1)); }
-          done
+          echo "── File formats ──"
+          if [[ "${BUILD_TARGET}" == "all" || "${BUILD_TARGET}" == "android" ]]; then
+            echo "(Android: should be ELF)"
+            for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+              FMT=$(file "dist/android/${abi}/lib/libpdfium.so")
+              echo "  android/${abi}/libpdfium.so: ${FMT}"
+              echo "${FMT}" | grep -qi "ELF" || { echo "FAIL: expected ELF"; ERRORS=$((ERRORS + 1)); }
+            done
+          fi
+          if [[ "${BUILD_TARGET}" == "all" || "${BUILD_TARGET}" == "ios" ]]; then
+            echo "(iOS: should be Mach-O)"
+            for arch in arm64 x86_64; do
+              FMT=$(file "dist/ios/${arch}/lib/libpdfium.dylib")
+              echo "  ios/${arch}/libpdfium.dylib: ${FMT}"
+              echo "${FMT}" | grep -qi "Mach-O" || { echo "FAIL: expected Mach-O"; ERRORS=$((ERRORS + 1)); }
+            done
+          fi
 
           echo ""
           echo "── Architecture check ──"
-          file "dist/android/arm64-v8a/lib/libpdfium.so"  | grep -qi "aarch64\|arm64"  || { echo "FAIL: arm64-v8a not aarch64"; ERRORS=$((ERRORS + 1)); }
-          file "dist/android/armeabi-v7a/lib/libpdfium.so" | grep -qi "arm\|32"          || { echo "FAIL: armeabi-v7a not ARM"; ERRORS=$((ERRORS + 1)); }
-          file "dist/android/x86_64/lib/libpdfium.so"     | grep -qi "x86.64\|x86-64"  || { echo "FAIL: x86_64 not x86-64"; ERRORS=$((ERRORS + 1)); }
-          file "dist/android/x86/lib/libpdfium.so"        | grep -qi "Intel\|386\|x86"  || { echo "FAIL: x86 not x86"; ERRORS=$((ERRORS + 1)); }
-          echo "  Android architectures look correct."
+          if [[ "${BUILD_TARGET}" == "all" || "${BUILD_TARGET}" == "android" ]]; then
+            file "dist/android/arm64-v8a/lib/libpdfium.so"  | grep -qi "aarch64\|arm64"  || { echo "FAIL: arm64-v8a not aarch64"; ERRORS=$((ERRORS + 1)); }
+            file "dist/android/armeabi-v7a/lib/libpdfium.so" | grep -qi "arm\|32"          || { echo "FAIL: armeabi-v7a not ARM"; ERRORS=$((ERRORS + 1)); }
+            file "dist/android/x86_64/lib/libpdfium.so"     | grep -qi "x86.64\|x86-64"  || { echo "FAIL: x86_64 not x86-64"; ERRORS=$((ERRORS + 1)); }
+            file "dist/android/x86/lib/libpdfium.so"        | grep -qi "Intel\|386\|x86"  || { echo "FAIL: x86 not x86"; ERRORS=$((ERRORS + 1)); }
+            echo "  Android architectures OK."
+          fi
 
           echo ""
           echo "── Wrapper symbols (should export pdfium_init, pdfium_render_page, etc.) ──"
           EXPECTED_SYMBOLS="pdfium_init pdfium_destroy pdfium_load_document pdfium_close_document pdfium_render_page pdfium_free_bitmap"
-          SAMPLE_LIB="dist/android/arm64-v8a/lib/libpdfium_wrapper.a"
+          if [[ "${BUILD_TARGET}" == "all" || "${BUILD_TARGET}" == "android" ]]; then
+            SAMPLE_LIB="dist/android/arm64-v8a/lib/libpdfium_wrapper.a"
+          else
+            SAMPLE_LIB="dist/ios/arm64/lib/libpdfium_wrapper.a"
+          fi
           if command -v llvm-nm &>/dev/null; then
             NM_CMD="llvm-nm"
           elif command -v nm &>/dev/null; then
@@ -142,7 +176,7 @@ jobs:
   #  Release — upload the bundle when a version tag is pushed
   # ─────────────────────────────────────────────────────────────────────────
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
     needs: [build]
     runs-on: ubuntu-latest
     permissions:
@@ -155,22 +189,32 @@ jobs:
           name: pdf-engine
           path: .
 
+      - name: Determine version tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}-$(date +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Rename bundle for release
-        run: mv pdf-engine.tar.gz pdf-engine-${{ github.ref_name }}.tar.gz
+        run: mv pdf-engine.tar.gz pdf-engine-${{ steps.version.outputs.tag }}.tar.gz
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: pdf-engine-${{ github.ref_name }}.tar.gz
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: pdf-engine-${{ steps.version.outputs.tag }}.tar.gz
           generate_release_notes: true
           body: |
-            ## pdf-engine ${{ github.ref_name }}
+            ## pdf-engine ${{ steps.version.outputs.tag }}
 
             Pre-built PDFium + wrapper libraries for iOS and Android.
 
             ### Usage
 
-            Download and extract `pdf-engine-${{ github.ref_name }}.tar.gz`:
+            Download and extract `pdf-engine-${{ steps.version.outputs.tag }}.tar.gz`:
 
             ```
             include/            pdfium_wrapper.h + PDFium headers
