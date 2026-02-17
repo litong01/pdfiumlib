@@ -17,11 +17,11 @@ on:
           - all
           - android
           - ios
-      create_release:
-        description: "Create a GitHub release with the bundle"
+      version:
+        description: "Release version (e.g. v1.0.0). Leave empty to skip release."
         required: false
-        default: false
-        type: boolean
+        default: ""
+        type: string
 
 env:
   PDFIUM_VERSION: "7690"
@@ -177,7 +177,7 @@ jobs:
   #  Release — upload the bundle when a version tag is pushed
   # ─────────────────────────────────────────────────────────────────────────
   release:
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     needs: [build]
     runs-on: ubuntu-latest
     permissions:
@@ -193,10 +193,10 @@ jobs:
       - name: Determine version tag
         id: version
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${{ inputs.version }}" ]]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ github.ref_name }}-$(date +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Rename bundle for release
