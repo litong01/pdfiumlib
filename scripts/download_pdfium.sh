@@ -2,7 +2,7 @@
 #
 # download_pdfium.sh — Download pre-built PDFium binaries for iOS and Android.
 #
-# Uses the bblanchon/pdfium-binaries GitHub releases which provide ready-made
+# Uses bblanchon/pdfium-binaries GitHub releases which provide ready-made
 # static libraries for many platforms.
 #
 # Usage:
@@ -25,15 +25,15 @@ THIRD_PARTY="${PROJECT_ROOT}/third_party/pdfium"
 # ---------------------------------------------------------------------------
 # PDFium release version (from bblanchon/pdfium-binaries).
 # Update this when you want a newer build.
-# See: https://github.com/ArtifexSoftware/pdfium-binaries/releases
+# See: https://github.com/bblanchon/pdfium-binaries/releases
 # ---------------------------------------------------------------------------
-PDFIUM_VERSION="${PDFIUM_VERSION:-6721}"
-BASE_URL="https://github.com/ArtifexSoftware/pdfium-binaries/releases/download/chromium%2F${PDFIUM_VERSION}"
+PDFIUM_VERSION="${PDFIUM_VERSION:-7690}"
+BASE_URL="https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/${PDFIUM_VERSION}"
 
 # Map of <local-dir-name> -> <archive-filename>
 declare -A TARGETS=(
-    ["ios-arm64"]="pdfium-ios-arm64.tgz"
-    ["ios-x64"]="pdfium-ios-x64.tgz"
+    ["ios-arm64"]="pdfium-ios-device-arm64.tgz"
+    ["ios-x64"]="pdfium-ios-simulator-x64.tgz"
     ["android-arm64"]="pdfium-android-arm64.tgz"
     ["android-arm"]="pdfium-android-arm.tgz"
     ["android-x64"]="pdfium-android-x64.tgz"
