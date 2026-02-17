@@ -93,7 +93,7 @@ ANDROID_API=24 PDFIUM_VERSION=6721 ./scripts/build.sh
 | Variable | Default | Description |
 |---|---|---|
 | `ANDROID_API` | `21` | Minimum Android API level |
-| `PDFIUM_VERSION` | `6721` | pdfium-binaries release number |
+| `PDFIUM_VERSION` | `7690` | pdfium-binaries release number |
 | `USE_DOCKER` | `1` | Set to `0` to build natively (no Docker) |
 
 ### Output
@@ -101,12 +101,12 @@ ANDROID_API=24 PDFIUM_VERSION=6721 ./scripts/build.sh
 ```
 dist/
 ├── android/
-│   ├── arm64-v8a/lib/   (libpdfium_wrapper.a + libpdfium.a)
+│   ├── arm64-v8a/lib/   (libpdfium_wrapper.a + libpdfium.so)
 │   ├── armeabi-v7a/lib/
 │   ├── x86_64/lib/
 │   └── x86/lib/
 ├── ios/
-│   ├── arm64/lib/       (libpdfium_wrapper.a + libpdfium.a)
+│   ├── arm64/lib/       (libpdfium_wrapper.a + libpdfium.dylib)
 │   └── x86_64/lib/
 └── include/
     └── pdfium_wrapper.h
@@ -171,7 +171,7 @@ fn main() {
 
     println!("cargo:rustc-link-search=native={lib_dir}");
     println!("cargo:rustc-link-lib=static=pdfium_wrapper");
-    println!("cargo:rustc-link-lib=static=pdfium");
+    println!("cargo:rustc-link-lib=dylib=pdfium");
 }
 ```
 

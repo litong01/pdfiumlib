@@ -18,13 +18,13 @@
 # Environment variables:
 #   USE_DOCKER      0 to skip Docker and build natively (default: 1)
 #   ANDROID_API     minimum Android API level              (default: 21)
-#   PDFIUM_VERSION  pdfium-binaries release to download    (default: 6721)
+#   PDFIUM_VERSION  pdfium-binaries release to download    (default: 7690)
 #   ANDROID_NDK_HOME  (native mode only) path to the NDK
 #
 # Output:
-#   dist/ios/arm64/lib/         libpdfium_wrapper.a + libpdfium.a
-#   dist/ios/x86_64/lib/        libpdfium_wrapper.a + libpdfium.a
-#   dist/android/arm64-v8a/lib/ libpdfium_wrapper.a + libpdfium.a
+#   dist/ios/arm64/lib/         libpdfium_wrapper.a + libpdfium.dylib
+#   dist/ios/x86_64/lib/        libpdfium_wrapper.a + libpdfium.dylib
+#   dist/android/arm64-v8a/lib/ libpdfium_wrapper.a + libpdfium.so
 #   dist/android/armeabi-v7a/lib/…
 #   dist/android/x86_64/lib/…
 #   dist/android/x86/lib/…
@@ -159,7 +159,7 @@ build_android() {
         cmake --build "${BUILD_DIR}" --config Release --parallel
         cmake --install "${BUILD_DIR}" --config Release
 
-        cp "${PDFIUM_DIR}/lib/libpdfium.a" "${INSTALL_DIR}/lib/"
+        cp "${PDFIUM_DIR}/lib/libpdfium.so" "${INSTALL_DIR}/lib/"
         echo "  ✓ ${ABI}"
     done
 }
@@ -205,7 +205,7 @@ build_ios_arch_crosscompile() {
         -o "${OBJ_DIR}/pdfium_wrapper.o"
 
     llvm-ar rcs "${INSTALL_DIR}/lib/libpdfium_wrapper.a" "${OBJ_DIR}/pdfium_wrapper.o"
-    cp "${PDFIUM_DIR}/lib/libpdfium.a" "${INSTALL_DIR}/lib/"
+    cp "${PDFIUM_DIR}/lib/libpdfium.dylib" "${INSTALL_DIR}/lib/"
     echo "  ✓ ${ARCH}"
 }
 
@@ -236,7 +236,7 @@ build_ios_arch_xcode() {
     cmake --build "${BUILD_DIR}" --config Release --parallel
     cmake --install "${BUILD_DIR}" --config Release
 
-    cp "${PDFIUM_DIR}/lib/libpdfium.a" "${INSTALL_DIR}/lib/"
+    cp "${PDFIUM_DIR}/lib/libpdfium.dylib" "${INSTALL_DIR}/lib/"
     echo "  ✓ ${ARCH}"
 }
 
@@ -288,11 +288,11 @@ echo ""
 echo "Artifacts in dist/:"
 if [[ "${TARGET}" == "all" || "${TARGET}" == "android" ]]; then
     for ABI in arm64-v8a armeabi-v7a x86_64 x86; do
-        echo "  android/${ABI}/lib/  libpdfium_wrapper.a + libpdfium.a"
+        echo "  android/${ABI}/lib/  libpdfium_wrapper.a + libpdfium.so"
     done
 fi
 if [[ "${TARGET}" == "all" || "${TARGET}" == "ios" ]]; then
-    echo "  ios/arm64/lib/      libpdfium_wrapper.a + libpdfium.a"
-    echo "  ios/x86_64/lib/     libpdfium_wrapper.a + libpdfium.a"
+    echo "  ios/arm64/lib/      libpdfium_wrapper.a + libpdfium.dylib"
+    echo "  ios/x86_64/lib/     libpdfium_wrapper.a + libpdfium.dylib"
 fi
 echo "  include/            pdfium_wrapper.h"

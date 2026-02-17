@@ -42,11 +42,11 @@ jobs:
         run: |
           for abi in arm64-v8a armeabi-v7a x86_64 x86; do
             test -f "dist/android/${abi}/lib/libpdfium_wrapper.a" || { echo "Missing: android/${abi}/libpdfium_wrapper.a"; exit 1; }
-            test -f "dist/android/${abi}/lib/libpdfium.a"         || { echo "Missing: android/${abi}/libpdfium.a"; exit 1; }
+            test -f "dist/android/${abi}/lib/libpdfium.so"        || { echo "Missing: android/${abi}/libpdfium.so"; exit 1; }
           done
           for arch in arm64 x86_64; do
-            test -f "dist/ios/${arch}/lib/libpdfium_wrapper.a" || { echo "Missing: ios/${arch}/libpdfium_wrapper.a"; exit 1; }
-            test -f "dist/ios/${arch}/lib/libpdfium.a"         || { echo "Missing: ios/${arch}/libpdfium.a"; exit 1; }
+            test -f "dist/ios/${arch}/lib/libpdfium_wrapper.a"  || { echo "Missing: ios/${arch}/libpdfium_wrapper.a"; exit 1; }
+            test -f "dist/ios/${arch}/lib/libpdfium.dylib"      || { echo "Missing: ios/${arch}/libpdfium.dylib"; exit 1; }
           done
           test -f dist/include/pdfium_wrapper.h || { echo "Missing: pdfium_wrapper.h"; exit 1; }
           echo "All artifacts verified."
