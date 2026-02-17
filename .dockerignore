@@ -1,0 +1,8 @@
+# Keep the Docker build context small — only the Dockerfile is needed for
+# image creation.  The full source tree is volume-mounted at runtime.
+build/
+dist/
+third_party/
+.git/
+*.md
+LICENSE
