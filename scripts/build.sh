@@ -319,10 +319,10 @@ echo "════════════════════════�
 echo "  Packaging bundle …"
 echo "══════════════════════════════════════════════"
 
-tar czf "${BUNDLE}" \
-    -C "${DIST}" \
-    --exclude="pdf-engine.tar.gz" \
-    .
+# Write to a temp file first so tar doesn't read its own output mid-write.
+TMP_BUNDLE="/tmp/pdf-engine-bundle-$$.tar.gz"
+tar czf "${TMP_BUNDLE}" -C "${DIST}" .
+mv "${TMP_BUNDLE}" "${BUNDLE}"
 
 echo "  Bundle: ${BUNDLE}"
 echo "  Size:   $(du -h "${BUNDLE}" | cut -f1)"
