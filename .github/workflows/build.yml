@@ -49,17 +49,26 @@ jobs:
             test -f "dist/ios/${arch}/lib/libpdfium.dylib"      || { echo "Missing: ios/${arch}/libpdfium.dylib"; exit 1; }
           done
           test -f dist/include/pdfium_wrapper.h || { echo "Missing: pdfium_wrapper.h"; exit 1; }
+          test -f dist/include/fpdfview.h       || { echo "Missing: fpdfview.h (PDFium headers)"; exit 1; }
+          test -f dist/pdf-engine.tar.gz        || { echo "Missing: pdf-engine.tar.gz bundle"; exit 1; }
           echo "All artifacts verified."
 
-      - name: Upload artifacts
+      - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
-          name: pdf-engine-libs
-          path: dist/
+          name: pdf-engine
+          path: dist/pdf-engine.tar.gz
           retention-days: 30
 
+      - name: Upload full dist (for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-engine-dist
+          path: dist/
+          retention-days: 7
+
   # ─────────────────────────────────────────────────────────────────────────
-  #  Release — package and upload when a version tag is pushed
+  #  Release — upload the bundle when a version tag is pushed
   # ─────────────────────────────────────────────────────────────────────────
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -69,20 +78,34 @@ jobs:
       contents: write
 
     steps:
-      - name: Download artifacts
+      - name: Download bundle
         uses: actions/download-artifact@v4
         with:
-          name: pdf-engine-libs
-          path: dist/
+          name: pdf-engine
+          path: .
 
-      - name: Package release archive
-        run: |
-          echo "Contents of dist/:"
-          find dist -type f | sort
-          tar czf pdf-engine-${{ github.ref_name }}.tar.gz dist/
+      - name: Rename bundle for release
+        run: mv pdf-engine.tar.gz pdf-engine-${{ github.ref_name }}.tar.gz
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: pdf-engine-${{ github.ref_name }}.tar.gz
           generate_release_notes: true
+          body: |
+            ## pdf-engine ${{ github.ref_name }}
+
+            Pre-built PDFium + wrapper libraries for iOS and Android.
+
+            ### Usage
+
+            Download and extract `pdf-engine-${{ github.ref_name }}.tar.gz`:
+
+            ```
+            include/            pdfium_wrapper.h + PDFium headers
+            android/<abi>/lib/  libpdfium_wrapper.a + libpdfium.so
+            ios/<arch>/lib/     libpdfium_wrapper.a + libpdfium.dylib
+            ```
+
+            Point your build system at the extracted directory and link against
+            `pdfium_wrapper` (static) and `pdfium` (dynamic).

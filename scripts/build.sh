@@ -28,7 +28,8 @@
 #   dist/android/armeabi-v7a/lib/…
 #   dist/android/x86_64/lib/…
 #   dist/android/x86/lib/…
-#   dist/include/pdfium_wrapper.h
+#   dist/include/                pdfium_wrapper.h + PDFium headers
+#   dist/pdf-engine.tar.gz       ready-to-use bundle (everything above)
 #
 set -euo pipefail
 
@@ -195,9 +196,19 @@ build_ios_arch_crosscompile() {
     local OBJ_DIR="/tmp/build/ios-${ARCH}"
     mkdir -p "${OBJ_DIR}"
 
+    # Use -nostdinc to avoid pulling in host glibc headers (which have
+    # architecture-specific bits/ that break cross-compilation).  Instead
+    # provide only:
+    #   1. clang's built-in headers (stddef.h, stdint.h, …)
+    #   2. Our minimal cross-sysroot stubs (stdlib.h, string.h, math.h)
+    local CLANG_RESOURCE_DIR
+    CLANG_RESOURCE_DIR="$(clang -print-resource-dir)"
+
     clang \
         -target "${CLANG_TARGET}" \
-        --sysroot=/ \
+        -nostdinc \
+        -isystem "${CLANG_RESOURCE_DIR}/include" \
+        -isystem "${SRC}/wrapper/cross-sysroot/include" \
         -I"${SRC}/wrapper" \
         -I"${PDFIUM_DIR}/include" \
         -O2 -DNDEBUG -fPIC \
@@ -273,10 +284,48 @@ case "${TARGET}" in
         ;;
 esac
 
-# ── Copy public header ────────────────────────────────────────────────────
+# ── Copy headers ──────────────────────────────────────────────────────────
+#
+# Include both the wrapper header and the upstream PDFium headers so that
+# consumers of the bundle don't need to fetch anything else.
 
 mkdir -p "${DIST}/include"
 cp "${SRC}/wrapper/pdfium_wrapper.h" "${DIST}/include/"
+
+# Copy PDFium public headers from any downloaded target (they're identical
+# across architectures).
+PDFIUM_HEADER_SRC=""
+for candidate in ios-arm64 android-arm64 ios-x64 android-arm; do
+    if [[ -d "${THIRD_PARTY}/${candidate}/include" ]]; then
+        PDFIUM_HEADER_SRC="${THIRD_PARTY}/${candidate}/include"
+        break
+    fi
+done
+if [[ -n "${PDFIUM_HEADER_SRC}" ]]; then
+    cp -r "${PDFIUM_HEADER_SRC}/"* "${DIST}/include/"
+fi
+
+# ── Package bundle ────────────────────────────────────────────────────────
+#
+# Create a single .tar.gz that contains everything a consumer needs:
+#   pdf-engine/
+#   ├── include/          (pdfium_wrapper.h + PDFium headers)
+#   ├── android/<abi>/lib/  (libpdfium_wrapper.a + libpdfium.so)
+#   └── ios/<arch>/lib/     (libpdfium_wrapper.a + libpdfium.dylib)
+
+BUNDLE="${DIST}/pdf-engine.tar.gz"
+echo ""
+echo "══════════════════════════════════════════════"
+echo "  Packaging bundle …"
+echo "══════════════════════════════════════════════"
+
+tar czf "${BUNDLE}" \
+    -C "${DIST}" \
+    --exclude="pdf-engine.tar.gz" \
+    .
+
+echo "  Bundle: ${BUNDLE}"
+echo "  Size:   $(du -h "${BUNDLE}" | cut -f1)"
 
 # ── Summary ───────────────────────────────────────────────────────────────
 
@@ -285,7 +334,7 @@ echo "════════════════════════�
 echo "  Build complete — ${TARGET}"
 echo "══════════════════════════════════════════════"
 echo ""
-echo "Artifacts in dist/:"
+echo "dist/ contents:"
 if [[ "${TARGET}" == "all" || "${TARGET}" == "android" ]]; then
     for ABI in arm64-v8a armeabi-v7a x86_64 x86; do
         echo "  android/${ABI}/lib/  libpdfium_wrapper.a + libpdfium.so"
@@ -295,4 +344,7 @@ if [[ "${TARGET}" == "all" || "${TARGET}" == "ios" ]]; then
     echo "  ios/arm64/lib/      libpdfium_wrapper.a + libpdfium.dylib"
     echo "  ios/x86_64/lib/     libpdfium_wrapper.a + libpdfium.dylib"
 fi
-echo "  include/            pdfium_wrapper.h"
+echo "  include/            pdfium_wrapper.h + PDFium headers"
+echo ""
+echo "Ready-to-use bundle:"
+echo "  dist/pdf-engine.tar.gz"
