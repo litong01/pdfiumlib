@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/music-book-map.schema.json",
+  "title": "MusicBookMap",
+  "description": "Maps PDF pages to MusicXML pieces inside a digital music book bundle.",
+  "type": "object",
+  "required": ["bookId", "version", "pages"],
+  "additionalProperties": true,
+  "properties": {
+    "bookId": {
+      "type": "string",
+      "description": "Unique identifier for this book (UUID or slug)."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Schema version for forward-compatible parsing."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable title of the book (optional)."
+    },
+    "pages": {
+      "type": "array",
+      "description": "Ordered list of page entries. Only pages that contain pieces need to be listed.",
+      "items": {
+        "$ref": "#/$defs/PageEntry"
+      }
+    }
+  },
+  "$defs": {
+    "PageEntry": {
+      "type": "object",
+      "required": ["page", "pieces"],
+      "additionalProperties": true,
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based PDF page number."
+        },
+        "pieces": {
+          "type": "array",
+          "minItems": 1,
+          "description": "One or more pieces that begin or appear on this page.",
+          "items": {
+            "$ref": "#/$defs/PieceEntry"
+          }
+        }
+      }
+    },
+    "PieceEntry": {
+      "type": "object",
+      "required": ["xml", "title"],
+      "additionalProperties": true,
+      "properties": {
+        "xml": {
+          "type": "string",
+          "description": "Filename of the MusicXML file relative to the bundle root (e.g. \"pieces/ode-to-joy.musicxml\")."
+        },
+        "title": {
+          "type": "string",
+          "description": "Display title of the piece."
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["beginner", "intermediate", "advanced"],
+          "description": "Optional difficulty rating."
+        },
+        "locked": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, the piece requires purchase or unlock before playback."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional freeform tags for filtering (e.g. genre, instrument, tempo)."
+        }
+      }
+    }
+  }
+}

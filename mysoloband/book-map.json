@@ -1,0 +1,54 @@
+{
+  "bookId": "mysoloband-2026",
+  "version": 1,
+  "title": "Mysoloband Practice Book",
+  "pages": [
+    {
+      "page": 1,
+      "music": [
+        {
+          "xml": "music/asa-branca.musicxml",
+          "title": "Asa Branca",
+          "difficulty": "intermediate",
+          "tags": ["baroque", "keyboard"]
+        },
+        {
+          "xml": "music/blue-bag-folly.musicxml",
+          "title": "Blue Bag Folly",
+          "difficulty": "beginner",
+          "locked": true,
+          "tags": ["baroque", "keyboard"]
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "music": [
+        {
+          "xml": "music/chopin-trois-valses.mxl",
+          "title": "Chopin Three Valses",
+          "difficulty": "advanced",
+          "tags": ["baroque", "keyboard"]
+        },
+        {
+          "xml": "music/smike-test.musicxml",
+          "title": "Smoke Test",
+          "difficulty": "intermediate",
+          "locked": true,
+          "tags": ["baroque", "keyboard"]
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "music": [
+        {
+          "xml": "music/童年.mxl",
+          "title": "童年",
+          "difficulty": "beginner",
+          "tags": ["baroque", "keyboard", "beginner-friendly"]
+        }
+      ]
+    }
+  ]
+}
